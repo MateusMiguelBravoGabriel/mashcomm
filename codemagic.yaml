@@ -1,0 +1,82 @@
+workflows:
+  android-build:
+    name: Build Android APK
+    instance_type: mac_mini_m1
+    max_build_duration: 30
+    
+    environment:
+      android_signing:
+        - keystore_reference  # Substitua pelo nome do seu keystore no CodeMagic
+      groups:
+        - google_play_credentials  # Opcional: para publicação
+      vars:
+        PACKAGE_NAME: "com.seuapp.nome"  # Altere para o package name do seu app
+        FLUTTER_VERSION: "3.19.0"  # Ajuste conforme sua versão (se Flutter)
+    
+    cache:
+      cache_paths:
+        - $CM_BUILD_DIR/.gradle
+        - $CM_BUILD_DIR/build
+    
+    triggering:
+      events:
+        - push
+        - pull_request
+      branch_patterns:
+        - pattern: main
+          include: true
+          source: true
+        - pattern: develop
+          include: true
+          source: true
+    
+    scripts:
+      # Se for projeto Flutter, descomente as linhas abaixo:
+      # - name: Instalar Flutter
+      #   script: |
+      #     flutter --version
+      #     flutter pub get
+      
+      # - name: Análise e testes Flutter
+      #   script: |
+      #     flutter analyze
+      #     flutter test
+      
+      # - name: Build Flutter APK
+      #   script: |
+      #     flutter build apk --release \
+      #       --build-name=1.0.0 \
+      #       --build-number=$(date +%s)
+
+      # Se for Android Nativo (Gradle):
+      - name: Configurar permissões do Gradle
+        script: |
+          chmod +x ./gradlew
+      
+      - name: Build APK com Gradle
+        script: |
+          ./gradlew assembleRelease \
+            -Pandroid.injected.signing.store.file=$CM_KEYSTORE_PATH \
+            -Pandroid.injected.signing.store.password=$CM_KEYSTORE_PASSWORD \
+            -Pandroid.injected.signing.key.alias=$CM_KEY_ALIAS \
+            -Pandroid.injected.signing.key.password=$CM_KEY_PASSWORD
+
+    artifacts:
+      - build/app/outputs/flutter-apk/*.apk      # Flutter
+      - app/build/outputs/apk/release/*.apk      # Android Nativo
+      - app/build/outputs/bundle/release/*.aab   # App Bundle (opcional)
+      - build/**/mapping.txt                     # ProGuard mapping
+
+    publishing:
+      email:
+        recipients:
+          - seu-email@exemplo.com
+        notify:
+          success: true
+          failure: true
+      
+      # Descomente para publicar no Google Play (requer configuração prévia):
+      # google_play:
+      #   credentials: $GOOGLE_PLAY_CREDENTIALS
+      #   track: internal
+      #   submit_as_draft: true
