@@ -1,23 +1,35 @@
+# ============================================================
+# CodeMagic Configuration - Android Build (Release APK/AAB)
+# ============================================================
+# Como configurar:
+# 1. Salve este arquivo na raiz do repositório como 'codemagic.yaml'
+# 2. No CodeMagic (web), cadastre sua keystore em:
+#    Settings > Code signing > Android keystore
+#    - Reference name: meu-app-keystore
+# 3. No CodeMagic (web), cadastre variáveis de ambiente em:
+#    Settings > Environment variables
+#    - GOOGLE_SERVICES_JSON: cole o conteúdo inteiro do google-services.json
+# ============================================================
+
 workflows:
-  android-build:
-    name: Build Android APK
+  android-release:
+    name: Build Android Release
     instance_type: mac_mini_m1
     max_build_duration: 30
-    
+
     environment:
       android_signing:
-        - keystore_reference  # Substitua pelo nome do seu keystore no CodeMagic
+        - meu-app-keystore   # <-- NOME EXATO do Reference name no CodeMagic
       groups:
-        - google_play_credentials  # Opcional: para publicação
+        - firebase_credentials  # Grupo opcional para organizar variáveis
       vars:
-        PACKAGE_NAME: "com.seuapp.nome"  # Altere para o package name do seu app
-        FLUTTER_VERSION: "3.19.0"  # Ajuste conforme sua versão (se Flutter)
-    
+        PACKAGE_NAME: "com.seuapp.nome"  # Altere para seu package name
+
     cache:
       cache_paths:
         - $CM_BUILD_DIR/.gradle
         - $CM_BUILD_DIR/build
-    
+
     triggering:
       events:
         - push
@@ -29,54 +41,76 @@ workflows:
         - pattern: develop
           include: true
           source: true
-    
-    scripts:
-      # Se for projeto Flutter, descomente as linhas abaixo:
-      # - name: Instalar Flutter
-      #   script: |
-      #     flutter --version
-      #     flutter pub get
-      
-      # - name: Análise e testes Flutter
-      #   script: |
-      #     flutter analyze
-      #     flutter test
-      
-      # - name: Build Flutter APK
-      #   script: |
-      #     flutter build apk --release \
-      #       --build-name=1.0.0 \
-      #       --build-number=$(date +%s)
 
-      # Se for Android Nativo (Gradle):
-      - name: Configurar permissões do Gradle
+    scripts:
+      # ============================================================
+      # 1. RECRIAR GOOGLE-SERVICES.JSON A PARTIR DE VARIÁVEL DE AMBIENTE
+      # ============================================================
+      # O arquivo google-services.json NÃO deve estar no GitHub.
+      # Armazene o conteúdo dele na variável GOOGLE_SERVICES_JSON
+      # no CodeMagic (Settings > Environment variables).
+      # ============================================================
+      - name: Criar google-services.json do Firebase
+        script: |
+          echo "$GOOGLE_SERVICES_JSON" > android/app/google-services.json
+          echo "✅ google-services.json criado com sucesso"
+          # Verifica se o arquivo foi criado corretamente
+          if [ ! -f android/app/google-services.json ]; then
+            echo "❌ ERRO: google-services.json não foi criado"
+            exit 1
+          fi
+
+      # ============================================================
+      # 2. PERMISSÃO DO GRADLE
+      # ============================================================
+      - name: Dar permissão ao Gradle
         script: |
           chmod +x ./gradlew
-      
-      - name: Build APK com Gradle
+
+      # ============================================================
+      # 3. BUILD DO APK RELEASE (ASSINADO)
+      # ============================================================
+      # A keystore cadastrada no CodeMagic é injetada automaticamente
+      # nas variáveis:
+      #   CM_KEYSTORE_PATH
+      #   CM_KEYSTORE_PASSWORD
+      #   CM_KEY_ALIAS
+      #   CM_KEY_PASSWORD
+      # ============================================================
+      - name: Build APK Release
         script: |
-          ./gradlew assembleRelease \
-            -Pandroid.injected.signing.store.file=$CM_KEYSTORE_PATH \
-            -Pandroid.injected.signing.store.password=$CM_KEYSTORE_PASSWORD \
-            -Pandroid.injected.signing.key.alias=$CM_KEY_ALIAS \
-            -Pandroid.injected.signing.key.password=$CM_KEY_PASSWORD
+          ./gradlew assembleRelease
+
+      # ============================================================
+      # 4. BUILD DO APP BUNDLE (AAB) - Opcional, para Play Store
+      # ============================================================
+      - name: Build App Bundle (AAB)
+        script: |
+          ./gradlew bundleRelease
 
     artifacts:
-      - build/app/outputs/flutter-apk/*.apk      # Flutter
-      - app/build/outputs/apk/release/*.apk      # Android Nativo
-      - app/build/outputs/bundle/release/*.aab   # App Bundle (opcional)
-      - build/**/mapping.txt                     # ProGuard mapping
+      # APK Release
+      - app/build/outputs/apk/release/*.apk
+      # App Bundle (AAB) - obrigatório para Play Store
+      - app/build/outputs/bundle/release/*.aab
+      # ProGuard mapping (útil para debug de crashes)
+      - app/build/outputs/mapping/release/mapping.txt
 
     publishing:
+      # Notificação por e-mail
       email:
         recipients:
           - seu-email@exemplo.com
         notify:
           success: true
           failure: true
-      
-      # Descomente para publicar no Google Play (requer configuração prévia):
+
+      # ============================================================
+      # PUBLICAÇÃO NO GOOGLE PLAY (Opcional)
+      # Descomente e configure se quiser publicar automaticamente
+      # ============================================================
       # google_play:
       #   credentials: $GOOGLE_PLAY_CREDENTIALS
-      #   track: internal
+      #   track: internal          # internal / alpha / beta / production
       #   submit_as_draft: true
+      #   # in_app_update_priority: 5
